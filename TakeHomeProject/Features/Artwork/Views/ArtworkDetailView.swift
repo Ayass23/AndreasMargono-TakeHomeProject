@@ -6,16 +6,19 @@
 //
 
 import SwiftUI
+import SDWebImageSwiftUI
 
 struct ArtworkDetailView: View {
     @State var artworks: Artwork?
-    @StateObject var viewModel = ArtworkViewModel()
+    @ObservedObject var viewModel = ArtworkViewModel()
     @State private var isPresented = false
     @State private var isSaving = false
     @State private var showAlert = false
     @State private var alertMessage = ""
-    @Environment(\.displayScale) var displayScale
-
+    @State private var imageURL: String = ""
+    @State private var isLoaded = false
+    @State private var isError: Bool = false
+    
     var filteredArtworks: [Artwork] {
         guard let artistName = artworks?.artist_display else { return [] }
         return viewModel.listArtworks.filter { artwork in
@@ -23,15 +26,30 @@ struct ArtworkDetailView: View {
             artworks?.id
         }
     }
-
+    
     var body: some View {
         ScrollView{
             VStack(alignment: .leading){
                 VStack(alignment: .center){
-                    AsyncImage(url: URL(string: artworks?.ImageUrl ?? "no Image")).frame(maxWidth: .infinity).scaledToFit()
+                    WebImage(url: URL(string:artworks?.imageURL(iiifURL: viewModel.iiifURL) ?? "no image")){ image in
+                        image.resizable().frame(width : 300, height: 300).scaledToFit()
+                    } placeholder: {
+                        WebImage(url : URL(string: "https://images.wondershare.com/repairit/article/fixing-the-image-not-available-error-01.png")).resizable( ).frame(width : 300, height: 300).scaledToFit()
+                    }.onSuccess { _,_,_  in
+                        isLoaded = true
+                        imageURL = artworks?.imageURL(iiifURL: viewModel.iiifURL) ?? "no image"
+                        showAlert = true
+                        
+                    }.onFailure() { _ in
+                        isLoaded = false
+                        imageURL = "https://images.wondershare.com/repairit/article/fixing-the-image-not-available-error-01.png"
+                    }
+                    
                     Button(action: {
                         Task {
-                            await saveView(imageUrl: artworks?.ImageUrl ?? "")
+                            isSaving = true
+                            await viewModel.saveView(imageUrl:imageURL)
+                            isSaving = false
                         }
                     }, label: {
                         if isSaving {
@@ -41,7 +59,9 @@ struct ArtworkDetailView: View {
                                 .foregroundStyle(Color.red)
                                 .font(.system(size: 30, weight: .bold))
                         }
-                    }).padding(.bottom, 20)
+                    }).alert("Successfully Download Image", isPresented: $viewModel.showAlert) {
+                        Button("OK", role: .cancel) { }
+                    }.padding(.bottom, 20)
                     Button("Show Image Full Screen") {
                         isPresented.toggle()
                     }
@@ -64,7 +84,11 @@ struct ArtworkDetailView: View {
                     }else{
                         List(filteredArtworks){ artistArtworks in
                             HStack{
-                                AsyncImage(url: URL(string: artistArtworks.ImageUrl ?? "no Image")).frame(width: 100, height: 100).scaledToFit()
+                                WebImage(url: URL(string:artworks?.imageURL(iiifURL: viewModel.iiifURL) ?? "no image")){ image in
+                                    image.resizable().frame(width : 100, height: 100).scaledToFit()
+                                } placeholder: {
+                                    WebImage(url : URL(string: "https://images.wondershare.com/repairit/article/fixing-the-image-not-available-error-01.png")).resizable( ).frame(width : 100, height: 100).scaledToFit()
+                                }
                                 VStack(alignment: .leading) {
                                     Text(artistArtworks.title)
                                     Text("\(artistArtworks.date_end)")
@@ -81,36 +105,8 @@ struct ArtworkDetailView: View {
                 .navigationTitle(artworks?.title ?? "no title")
         }
     }
-    
-    @MainActor func saveView(imageUrl : String) async {
-        do {
-            guard let url = URL(string: imageUrl) else {
-                alertMessage = "Invalid image URL"
-                showAlert = true
-                return
-            }
-            let (data, _) = try await URLSession.shared.data(from: url)
-            
-            guard let uiImage = UIImage(data: data) else {
-                alertMessage = "Failed to load image"
-                showAlert = true
-                isSaving = false
-                return
-            }
-            
-            UIImageWriteToSavedPhotosAlbum(uiImage, nil, nil, nil)
-            alertMessage = "Image saved successfully!"
-            showAlert = true
-            
-        } catch {
-            alertMessage = "Failed to save: \(error.localizedDescription)"
-            showAlert = true
-        }
-
-        
-        
-    }
 }
+
 
 fileprivate struct CardView: View {
     let imageName: String
@@ -137,11 +133,16 @@ fileprivate struct CardView: View {
 struct FullScreenModalView: View {
     @Environment(\.dismiss) var dismiss
     @State var artworks: Artwork?
+    @StateObject var viewModel = ArtworkViewModel()
     var body: some View {
         
         ZStack {
             VStack(alignment: .center){
-                AsyncImage(url: URL(string: artworks?.ImageUrl ?? "no Image")).frame(maxWidth: .infinity).scaledToFit()
+                WebImage(url: URL(string:artworks?.imageURL(iiifURL: viewModel.iiifURL) ?? "no image")){ image in
+                    image.resizable().frame(width : 300, height: 300).scaledToFit()
+                } placeholder: {
+                    WebImage(url : URL(string: "https://images.wondershare.com/repairit/article/fixing-the-image-not-available-error-01.png")).resizable().frame(width : 300, height: 300).scaledToFit()
+                }
                 Button("Dismiss Modal") {
                     dismiss()
                 }
